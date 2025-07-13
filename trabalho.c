@@ -103,6 +103,7 @@ int main() {
         Graph g = newGraph(vertices_num);
 
         int edges_num = 0;
+        scanf("%d", &edges_num);
 
         int home = 0;
         scanf("%d", &home);
@@ -139,7 +140,6 @@ int main() {
         }
 
         // Lê as arestas
-        scanf("%d", &edges_num);
         for (int i = 0; i < edges_num; i++) {
             int src = 0, dest = 0, weight = 0;
             scanf("%d %d %d", &src, &dest, &weight);
