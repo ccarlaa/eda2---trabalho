@@ -4,80 +4,33 @@
 
 #define INF 1000000000
 #define MAX_HEAP 10000
+#define MAX_V 10005
 
-// ------------------ Estruturas do Grafo ------------------
+// ---------------- Estruturas ----------------
 
-struct node {
+typedef struct node {
     int vertex;
     int weight;
     struct node *next;
-};
+} *link;
 
-typedef struct node *link;
-
-struct graph {
+typedef struct {
     int vertices;
     int edges;
     link *adj;
     int *is_restaurant;
     int *is_gasoline;
-};
+} *Graph;
 
-typedef struct graph *Graph;
+typedef struct {
+    int posicao_atual;
+    int combustivel;
+    int mochila_capacidade;
+    int mochila_tamanho;
+    int pedidos[100];
+} Estado;
 
-static link newNode(int vertex, int weight) {
-    link new = malloc(sizeof(struct node));
-    if (new == NULL) {
-        perror("Erro ao alocar novo nó");
-        exit(EXIT_FAILURE);
-    }
-    new->vertex = vertex;
-    new->weight = weight;
-    new->next = NULL;
-    return new;
-}
-
-static Graph newGraph(int vertices) {
-    Graph g = malloc(sizeof(struct graph));
-    if (g == NULL) {
-        perror("Erro ao alocar grafo");
-        exit(EXIT_FAILURE);
-    }
-    g->vertices = vertices;
-    g->edges = 0;
-    g->adj = malloc((vertices + 1) * sizeof(link)); 
-    if (g->adj == NULL) {
-        perror("Erro ao alocar lista de adj");
-        free(g);
-        exit(EXIT_FAILURE);
-    }
-    for (int i = 0; i <= vertices; i++) {
-        g->adj[i] = NULL;
-    }
-
-    g->is_restaurant = calloc((vertices + 1), sizeof(int));
-    g->is_gasoline = calloc((vertices + 1), sizeof(int));
-    if (g->is_restaurant == NULL || g->is_gasoline == NULL) {
-        perror("Erro ao alocar g ou r");
-        free(g->adj);
-        free(g->is_restaurant);
-        free(g->is_gasoline);
-        free(g);
-        exit(EXIT_FAILURE);
-    }
-    printf("[DEBUG] Grafo criado com %d vértices\n", vertices);
-    return g;
-}
-
-static void addEdge(Graph g, int src, int dest, int weight) {
-    link new = newNode(dest, weight);
-    new->next = g->adj[src];
-    g->adj[src] = new;
-    g->edges++;
-    printf("[DEBUG] Aresta add: %d -> %d (peso %d)\n", src, dest, weight);
-}
-
-// ------------------ Heap p/ Dijkstra ------------------
+// ---------------- MinHeap p/ Dijkstra ----------------
 
 typedef struct {
     int vertex;
@@ -90,422 +43,282 @@ typedef struct {
 } MinHeap;
 
 void swap(HeapNode* a, HeapNode* b) {
-    HeapNode temp = *a;
-    *a = *b;
-    *b = temp;
+    HeapNode temp = *a; *a = *b; *b = temp;
 }
 
-void heapify_up(MinHeap* h, int idx) {
-    while (idx > 0) {
-        int parent = (idx - 1) / 2;
-        if (h->data[parent].distance > h->data[idx].distance) {
-            swap(&h->data[parent], &h->data[idx]);
-            idx = parent;
+void heapify_up(MinHeap* h, int index) {
+    while (index > 0) {
+        int parent = (index - 1) / 2;
+        if (h->data[parent].distance > h->data[index].distance) {
+            swap(&h->data[parent], &h->data[index]);
+            index = parent;
         } else break;
     }
 }
 
-void heapify_down(MinHeap* h, int idx) {
-    int smallest = idx;
-    int left = 2 * idx + 1;
-    int right = 2 * idx + 2;
-
-    if (left < h->size && h->data[left].distance < h->data[smallest].distance)
-        smallest = left;
-    if (right < h->size && h->data[right].distance < h->data[smallest].distance)
-        smallest = right;
-
-    if (smallest != idx) {
-        swap(&h->data[idx], &h->data[smallest]);
+void heapify_down(MinHeap* h, int index) {
+    int smallest = index;
+    int left = 2*index+1, right = 2*index+2;
+    if (left < h->size && h->data[left].distance < h->data[smallest].distance) smallest = left;
+    if (right < h->size && h->data[right].distance < h->data[smallest].distance) smallest = right;
+    if (smallest != index) {
+        swap(&h->data[index], &h->data[smallest]);
         heapify_down(h, smallest);
     }
 }
 
 void insert_heap(MinHeap* h, int vertex, int distance) {
-    if (h->size >= MAX_HEAP) {
-        fprintf(stderr, "[DEBUG] Erro: Heap cheia. Não é possível inserir mais elementos\n");
-        return;
-    }
     h->data[h->size].vertex = vertex;
     h->data[h->size].distance = distance;
     heapify_up(h, h->size);
     h->size++;
-    printf("[DEBUG] Heap: Inserido vértice %d, distância %d Tamanho: %d\n", vertex, distance, h->size);
+    printf("[DEBUG] Inserido na heap do Dijkstra: vertice=%d dist=%d tamanho=%d\n", vertex, distance, h->size);
 }
 
 HeapNode extract_min(MinHeap* h) {
-    if (h->size == 0) {
-        fprintf(stderr, "[DEBUG] Erro: Heap vazia\n");
-        return (HeapNode){-1, INF};
-    }
+    if (h->size == 0) return (HeapNode){-1, INF};
     HeapNode min = h->data[0];
-    h->data[0] = h->data[h->size - 1];
+    h->data[0] = h->data[h->size-1];
     h->size--;
     heapify_down(h, 0);
-    printf("[DEBUG] Heap: Extraído vértice %d, distância %d Novo tamanho: %d\n", min.vertex, min.distance, h->size);
+    printf("[DEBUG] Extraído da heap do Dijkstra: vertice=%d dist=%d\n", min.vertex, min.distance);
     return min;
 }
 
-void dijkstra_heap(Graph g, int start, int* dist) {
-    int V = g->vertices;
-    int visited[V + 1];
-    printf("[DEBUG] Dijkstra: Iniciando de %d\n", start);
-    for (int i = 0; i <= V; i++) {
-        dist[i] = INF;
-        visited[i] = 0;
-    }
-
-    dist[start] = 0;
-
-    MinHeap heap;
-    heap.size = 0;
-    insert_heap(&heap, start, 0);
-
-    while (heap.size > 0) {
-        HeapNode min_node = extract_min(&heap);
-        int u = min_node.vertex;
-        int d_u = min_node.distance;
-
-        if (u == -1) break;
-
-        if (visited[u]) {
-            printf("[DEBUG] Dijkstra: Vértice %d já visitado\n", u);
-            continue;
-        }
-        visited[u] = 1;
-        printf("[DEBUG] Dijkstra: Visitando vértice %d (distância atual %d)\n", u, d_u);
-
-        link p = g->adj[u];
-        while (p != NULL) {
-            int v = p->vertex;
-            int w = p->weight;
-
-            if (!visited[v] && dist[u] + w < dist[v]) {
-                dist[v] = dist[u] + w;
-                insert_heap(&heap, v, dist[v]);
-                printf("[DEBUG] Dijkstra: Distância p/ %d atualizada p/ %d (via %d)\n", v, dist[v], u);
-            }
-            p = p->next;
-        }
-    }
-    printf("[DEBUG] Dijkstra: Concluído %d\n", start);
-}
-
-// ------------------ Entregador ------------------
+// ---------------- MinHeap p/ Pedidos ----------------
 
 typedef struct {
-    int posicao_atual;
-    int combustivel;
-    int mochila_capacidade;
-    int mochila_tamanho;
-    int pedidos[100]; // Tô supondo que são 100 pedidos
-} State;
+    int destino;
+    int distancia;
+} PedidoNode;
 
-void pegarPedido(State *estado, int destino) {
-    if (estado->mochila_tamanho < estado->mochila_capacidade) {
-        estado->pedidos[estado->mochila_tamanho++] = destino;
-        printf("[DEBUG] Pegou pedido para %d. Mochila agora tem %d pedidos\n", destino, estado->mochila_tamanho);
-    } else {
-        printf("[DEBUG] Mochila cheia. Não pegou pedido para %d\n", destino);
+typedef struct {
+    PedidoNode data[MAX_HEAP];
+    int size;
+} PedidoHeap;
+
+void swapPedido(PedidoNode* a, PedidoNode* b) {
+    PedidoNode t = *a;
+    *a = *b;
+    *b = t;
+}
+
+void heapify_up_pedido(PedidoHeap* h, int index) {
+    while (index > 0) {
+        int parent = (index-1)/2;
+        if (h->data[parent].distancia > h->data[index].distancia) {
+            swapPedido(&h->data[parent], &h->data[index]);
+            index = parent;
+        } else break;
     }
 }
 
-int entregarPedido(State *estado, int destino) {
-    for (int i = 0; i < estado->mochila_tamanho; i++) {
-        if (estado->pedidos[i] == destino) {
-            for (int j = i; j < estado->mochila_tamanho - 1; j++)
-                estado->pedidos[j] = estado->pedidos[j + 1];
-            estado->mochila_tamanho--;
-            printf("[DEBUG] Entregou pedido para %d Mochila agora tem %d pedidos\n", destino, estado->mochila_tamanho);
-            return 1;
+void heapify_down_pedido(PedidoHeap* h, int index) {
+    int smallest = index;
+    int left = 2*index+1, right = 2*index+2;
+    if (left < h->size && h->data[left].distancia < h->data[smallest].distancia) smallest = left;
+    if (right < h->size && h->data[right].distancia < h->data[smallest].distancia) smallest = right;
+    if (smallest != index) {
+        swapPedido(&h->data[index], &h->data[smallest]);
+        heapify_down_pedido(h, smallest);
+    }
+}
+
+void insertPedidoHeap(PedidoHeap* h, int destino, int distancia) {
+    h->data[h->size].destino = destino;
+    h->data[h->size].distancia = distancia;
+    heapify_up_pedido(h, h->size);
+    h->size++;
+    printf("[DEBUG] Inserido na Heap de Pedidos: destino=%d dist=%d tamanho=%d\n", destino, distancia, h->size);
+}
+
+PedidoNode extractPedidoMin(PedidoHeap* h) {
+    if (h->size == 0) return (PedidoNode){-1, INF};
+    PedidoNode min = h->data[0];
+    h->data[0] = h->data[h->size-1];
+    h->size--;
+    heapify_down_pedido(h, 0);
+    printf("[DEBUG] Extraído da Heap de Pedidos: destino=%d dist=%d\n", min.destino, min.distancia);
+    return min;
+}
+
+// ---------------- Grafo ----------------
+
+static link newNode(int v, int w) {
+    link n = malloc(sizeof(struct node));
+    n->vertex = v; n->weight = w; n->next = NULL;
+    return n;
+}
+
+Graph newGraph(int V) {
+    Graph g = malloc(sizeof(*g));
+    g->vertices = V; g->edges = 0;
+    g->adj = malloc((V+1)*sizeof(link));
+    g->is_restaurant = calloc(V+1,sizeof(int));
+    g->is_gasoline = calloc(V+1,sizeof(int));
+    for (int i=0;i<=V;i++) g->adj[i]=NULL;
+    printf("[DEBUG] Grafo criado com %d vertices\n", V);
+    return g;
+}
+
+void addEdge(Graph g,int u,int v,int w){
+    link n = newNode(v,w);
+    n->next=g->adj[u];
+    g->adj[u]=n;
+    printf("[DEBUG] Aresta adicionada: %d -> %d (peso=%d)\n", u, v, w);
+}
+
+// ---------------- Dijkstra com caminho ----------------
+
+void dijkstra(Graph g,int start,int *dist,int *parent){
+    int V=g->vertices;
+    for(int i=0;i<=V;i++){ dist[i]=INF; parent[i]=-1; }
+    dist[start]=0;
+    MinHeap h; h.size=0;
+    insert_heap(&h,start,0);
+    int visited[V+1]; memset(visited,0,sizeof(visited));
+    printf("[DEBUG] Executando Dijkstra a partir de %d\n", start);
+    while(h.size>0){
+        HeapNode mn=extract_min(&h);
+        int u=mn.vertex;
+        if(u==-1||visited[u]) continue;
+        visited[u]=1;
+        printf("[DEBUG] Visitando %d (dist=%d)\n", u, dist[u]);
+        for(link p=g->adj[u];p;p=p->next){
+            int v=p->vertex,w=p->weight;
+            if(dist[u]+w<dist[v]){
+                dist[v]=dist[u]+w;
+                parent[v]=u;
+                insert_heap(&h,v,dist[v]);
+                printf("[DEBUG] Atualizado: vertice=%d dist=%d pai=%d\n", v, dist[v], u);
+            }
         }
     }
-    printf("[DEBUG] Tentou entregar para %d, mas não tinha na mochila\n", destino);
+}
+
+// ---------------- Funções auxiliares ----------------
+
+void reconstruirCaminho(int alvo,int *parent,int atual,int *caminho,int *len){
+    *len=0;
+    for(int v=alvo;v!=-1;v=parent[v]) caminho[(*len)++]=v;
+    for(int i=0;i<*len/2;i++){ int tmp=caminho[i]; caminho[i]=caminho[*len-1-i]; caminho[*len-1-i]=tmp; }
+    printf("[DEBUG] Caminho até %d: ", alvo);
+    for(int i=0;i<*len;i++) printf("%d ", caminho[i]);
+    printf("\n");
+}
+
+int temPedido(Estado *e,int destino){
+    for(int i=0;i<e->mochila_tamanho;i++) if(e->pedidos[i]==destino) return 1;
     return 0;
 }
 
-int temPedidoPara(State *estado, int destino) {
-    for (int i = 0; i < estado->mochila_tamanho; i++) {
-        if (estado->pedidos[i] == destino) {
-            printf("[DEBUG] Tem pedido para %d na mochila\n", destino);
-            return 1;
-        }
-    }
-    printf("[DEBUG] Não tem pedido para %d na mochila\n", destino);
-    return 0;
+void pegarPedido(Estado *e,int destino){
+    e->pedidos[e->mochila_tamanho++]=destino;
+    printf("[DEBUG] Pegou pedido para %d | Mochila agora: %d\n", destino, e->mochila_tamanho);
 }
 
-// ------------------ Liberando pedidos ------------------
-void freeGraph(Graph g) {
-    if (g == NULL) return;
-    printf("[DEBUG] Liberando memória do grafo\n");
-    for (int i = 0; i <= g->vertices; i++) {
-        link current = g->adj[i];
-        while (current != NULL) {
-            link next = current->next;
-            free(current);
-            current = next;
+void entregarPedido(Estado *e,int destino){
+    for(int i=0;i<e->mochila_tamanho;i++){
+        if(e->pedidos[i]==destino){
+            for(int j=i;j<e->mochila_tamanho-1;j++) e->pedidos[j]=e->pedidos[j+1];
+            e->mochila_tamanho--;
+            printf("[DEBUG] Entregou pedido para %d | Mochila agora: %d\n", destino, e->mochila_tamanho);
+            return;
         }
     }
-    free(g->adj);
-    free(g->is_restaurant);
-    free(g->is_gasoline);
-    free(g);
-    printf("[DEBUG] Memória do grafo liberada\n");
 }
 
-int main() {
-    int N, M, H, T, I, C, P;
-    scanf("%d %d %d %d %d %d %d", &N, &M, &H, &T, &I, &C, &P);
-    printf("[DEBUG] Parâmetros lidos: N=%d, M=%d, H=%d, T=%d, I=%d, C=%d, P=%d\n", N, M, H, T, I, C, P);
+// ---------------- Main ----------------
 
-    Graph g = newGraph(N);
+int main(){
+    int N,M,H,T,I,C,P;
+    scanf("%d%d%d%d%d%d%d",&N,&M,&H,&T,&I,&C,&P);
+    printf("[DEBUG] Parametros: N=%d M=%d H=%d T=%d I=%d C=%d P=%d\n", N,M,H,T,I,C,P);
 
-    // Marca os postos de gasolina no array
-    for (int i = 0; i < P; i++) {
-        int posto_id;
-        scanf("%d", &posto_id);
-        if (posto_id >= 1 && posto_id <= N) {
-            g->is_gasoline[posto_id] = 1;
-            printf("[DEBUG] Vértice %d marcado como Posto de Gasolina\n", posto_id);
-        }
+    Graph g=newGraph(N);
+    for(int i=0;i<P;i++){ int x; scanf("%d",&x); g->is_gasoline[x]=1; printf("[DEBUG] Posto no vertice %d\n", x); }
+    for(int i=0;i<M;i++){ int u,v,w; scanf("%d%d%d",&u,&v,&w); addEdge(g,u,v,w); }
+    int Q; scanf("%d",&Q);
+    printf("[DEBUG] Restaurantes: %d\n", Q);
+    int **restaurant_orders=malloc((N+1)*sizeof(int*));
+    int *num_orders=calloc(N+1,sizeof(int));
+    for(int i=0;i<Q;i++){
+        int r,k; scanf("%d%d",&r,&k);
+        g->is_restaurant[r]=1;
+        num_orders[r]=k;
+        restaurant_orders[r]=malloc(k*sizeof(int));
+        for(int j=0;j<k;j++) scanf("%d",&restaurant_orders[r][j]);
+        printf("[DEBUG] Restaurante %d com %d pedidos\n", r, k);
     }
 
-    for (int i = 0; i < M; i++) {
-        int u, v, w;
-        scanf("%d %d %d", &u, &v, &w);
-        addEdge(g, u, v, w);
-    }
+    Estado e={.posicao_atual=H,.combustivel=I,.mochila_capacidade=C,.mochila_tamanho=0};
+    PedidoHeap heapPedidos; heapPedidos.size=0;
+    int *dist=malloc((N+1)*sizeof(int));
+    int *parent=malloc((N+1)*sizeof(int));
+    int caminho[MAX_V]; int len;
 
-    int Q;
-    scanf("%d", &Q);
-    printf("[DEBUG] Lendo %d restaurantes\n", Q);
+    while(1){
+        printf("[DEBUG] Estado: Pos=%d Comb=%d Mochila=%d\n", e.posicao_atual,e.combustivel,e.mochila_tamanho);
+        dijkstra(g,e.posicao_atual,dist,parent);
 
-    int **restaurant_orders = malloc((N + 1) * sizeof(int*));
-    if (restaurant_orders == NULL) {
-        perror("Erro ao alocar restaurant_orders");
-        freeGraph(g);
-        exit(EXIT_FAILURE);
-    }
-    int *num_orders_per_restaurant = calloc((N + 1), sizeof(int));
-    if (num_orders_per_restaurant == NULL) {
-        perror("Erro ao alocar num_orders_per_restaurant");
-        free(restaurant_orders);
-        freeGraph(g);
-        exit(EXIT_FAILURE);
-    }
-
-    for (int i = 0; i < Q; i++) {
-        int r, k;
-        scanf("%d %d", &r, &k);
-        if (r >= 1 && r <= N) {
-            g->is_restaurant[r] = 1;
-            num_orders_per_restaurant[r] = k;
-            printf("[DEBUG] Vértice %d marcado como Restaurante com %d pedidos\n", r, k);
-            restaurant_orders[r] = malloc(k * sizeof(int));
-            if (restaurant_orders[r] == NULL) {
-                perror("Erro ao alocar pedidos para restaurante");
-                for(int j = 0; j <= N; j++) {
-                    if (restaurant_orders[j] != NULL) free(restaurant_orders[j]);
-                }
-                free(restaurant_orders);
-                free(num_orders_per_restaurant);
-                freeGraph(g);
-                exit(EXIT_FAILURE);
-            }
-            printf("[DEBUG] Pedidos para o restaurante %d: ", r);
-            for (int j = 0; j < k; j++) {
-                scanf("%d", &restaurant_orders[r][j]);
-                printf("%d ", restaurant_orders[r][j]);
-            }
-            printf("\n");
-        }
-    }
-
-    State estado = { .posicao_atual = H, .combustivel = I, .mochila_capacidade = C, .mochila_tamanho = 0 };
-    printf("[DEBUG] Estado inicial do entregador: Pos=%d, Comb=%d, CapMochila=%d, TamMochila=%d\n",
-        estado.posicao_atual, estado.combustivel, estado.mochila_capacidade, estado.mochila_tamanho);
-
-    while (1) {
-        printf("\n Novo ciclo de decisão (Pos: %d, Comb: %d, Mochila: %d) ---\n",
-            estado.posicao_atual, estado.combustivel, estado.mochila_tamanho);
-        int *distancias = malloc((N + 1) * sizeof(int));
-        if (distancias == NULL) {
-            perror("Erro ao alocar distancias");
-            break;
-        }
-        dijkstra_heap(g, estado.posicao_atual, distancias);
-        printf("[DEBUG] Distâncias a partir de %d: ", estado.posicao_atual);
-        for(int i = 1; i <= N; i++) {
-            if (distancias[i] == INF) printf("%d:INF ", i);
-            else printf("%d:%d ", i, distancias[i]);
-        }
-        printf("\n");
-
-
-        // 1. Entregar pedido (Prioridade 1)
-        if (temPedidoPara(&estado, estado.posicao_atual)) {
-            printf("[DEBUG] PRIORIDADE 1: Entregar pedido em %d\n", estado.posicao_atual);
-            printf("e %d\n", estado.posicao_atual);
-            fflush(stdout);
-            char resp[10]; scanf("%s", resp);
-            entregarPedido(&estado, estado.posicao_atual);
-            free(distancias);
+        // 1. Entregar pedido
+        if(temPedido(&e,e.posicao_atual)){
+            printf("[DEBUG] Entregando pedido em %d\n", e.posicao_atual);
+            printf("e %d\n",e.posicao_atual); fflush(stdout);
+            char resp[10]; scanf("%s",resp);
+            entregarPedido(&e,e.posicao_atual);
             continue;
         }
 
-        // 2. Pegar pedidos (Prioridade 2)
-        if (g->is_restaurant[estado.posicao_atual] && estado.mochila_tamanho < estado.mochila_capacidade && num_orders_per_restaurant[estado.posicao_atual] > 0) {
-            printf("[DEBUG] PRIORIDADE 2: Pegar pedidos em Restaurante %d\n", estado.posicao_atual);
-            int num = num_orders_per_restaurant[estado.posicao_atual];
-            for (int i = 0; i < num && estado.mochila_tamanho < estado.mochila_capacidade; i++) {
-                printf("p %d\n", restaurant_orders[estado.posicao_atual][i]);
-                fflush(stdout);
-                char resp[10]; scanf("%s", resp);
-                pegarPedido(&estado, restaurant_orders[estado.posicao_atual][i]);
-                restaurant_orders[estado.posicao_atual][i] = -1;
+        // 2. Pegar pedidos
+        if(g->is_restaurant[e.posicao_atual] && e.mochila_tamanho<e.mochila_capacidade && num_orders[e.posicao_atual]>0){
+            printf("[DEBUG] Pegando pedidos no restaurante %d\n", e.posicao_atual);
+            int num=num_orders[e.posicao_atual];
+            for(int i=0;i<num && e.mochila_tamanho<e.mochila_capacidade;i++){
+                int dest=restaurant_orders[e.posicao_atual][i];
+                printf("p %d\n",dest); fflush(stdout);
+                char resp[10]; scanf("%s",resp);
+                pegarPedido(&e,dest);
+                insertPedidoHeap(&heapPedidos,dest,dist[dest]);
             }
-            num_orders_per_restaurant[estado.posicao_atual] = 0; // Pega todos os possíveis
-            free(distancias);
+            num_orders[e.posicao_atual]=0;
             continue;
         }
 
-        // 3. Abastecer (Prioridade 3)
-        if (g->is_gasoline[estado.posicao_atual] && estado.combustivel < T) {
-            printf("[DEBUG] PRIORIDADE 3: Abastecer em Posto %d\n", estado.posicao_atual);
-            printf("a\n");
-            fflush(stdout);
-            char resp[10]; scanf("%s", resp);
-            estado.combustivel = T;
-            printf("[DEBUG] Combustível abastecido para %d\n", estado.combustivel);
-            free(distancias);
+        // 3. Abastecer
+        if(g->is_gasoline[e.posicao_atual] && e.combustivel<T){
+            printf("[DEBUG] Abastecendo no posto %d\n", e.posicao_atual);
+            printf("a\n"); fflush(stdout);
+            char resp[10]; scanf("%s",resp);
+            e.combustivel=T;
             continue;
         }
 
-        // 4. Escolher próximo destino (Prioridade 4: Mover)
-        int alvo = -1, menor_distancia_alvo = INF;
-        printf("[DEBUG] PRIORIDADE 4: Escolhendo próximo alvo para mover\n");
-        for (int i = 0; i < estado.mochila_tamanho; i++) {
-            int dest = estado.pedidos[i];
-            if (dest != -1 && distancias[dest] != INF && distancias[dest] <= estado.combustivel && distancias[dest] < menor_distancia_alvo) {
-                alvo = dest;
-                menor_distancia_alvo = distancias[dest];
-                printf("[DEBUG] Alvo potencial (entrega): %d (dist %d)\n", alvo, menor_distancia_alvo);
-            }
+        // 4. Próximo alvo
+        PedidoNode prox=extractPedidoMin(&heapPedidos);
+        int alvo=-1;
+        if(prox.destino!=-1) alvo=prox.destino;
+        else {
+            if(e.posicao_atual==H && e.mochila_tamanho==0){ printf("[DEBUG] Todos pedidos entregues. Encerrando.\n"); printf("x\n"); fflush(stdout); break; }
+            else alvo=H;
         }
-        if (alvo == -1) {
-            printf("[DEBUG] Nenhum pedido para entregar Buscando restaurante\n");
-            for (int i = 1; i <= N; i++) {
-                if (g->is_restaurant[i] && num_orders_per_restaurant[i] > 0 &&
-                    estado.mochila_tamanho < estado.mochila_capacidade &&
-                    distancias[i] != INF && distancias[i] <= estado.combustivel &&
-                    distancias[i] < menor_distancia_alvo) {
-                    alvo = i;
-                    menor_distancia_alvo = distancias[i];
-                    printf("[DEBUG] Alvo potencial (pegar pedido): %d (dist %d)\n", alvo, menor_distancia_alvo);
-                }
-            }
-        }
-        if (alvo == -1) {
-            printf("[DEBUG] Nenhum alvo de entrega ou pegar pedido, verificando postos e casa\n");
-            int all_orders_collected = 1;
-            for(int i = 1; i <= N; i++) {
-                if (g->is_restaurant[i] && num_orders_per_restaurant[i] > 0) {
-                    all_orders_collected = 0;
-                    break;
-                }
-            }
 
-            if (estado.posicao_atual == H && estado.mochila_tamanho == 0 && all_orders_collected) {
-                printf("[DEBUG] Dia finalizadooo\n");
-                printf("x\n");
-                fflush(stdout);
-                char resp[10]; scanf("%s", resp);
-                free(distancias);
-                break;
-            }
-
-            // Vai pro posto mais próximo se precisar
-            int posto_mais_proximo = -1;
-            int dist_posto = INF;
-            if (estado.combustivel < T) {
-                for (int i = 1; i <= N; i++) {
-                    if (g->is_gasoline[i] && distancias[i] != INF && distancias[i] <= estado.combustivel && distancias[i] < dist_posto) {
-                        posto_mais_proximo = i;
-                        dist_posto = distancias[i];
-                    }
-                }
-            }
-            if (posto_mais_proximo != -1) {
-                alvo = posto_mais_proximo;
-                menor_distancia_alvo = dist_posto;
-                printf("[DEBUG] posto (posto de gasolina): %d (dist %d)\n", alvo, menor_distancia_alvo);
-            } else {
-                if (estado.posicao_atual != H && distancias[H] != INF && distancias[H] <= estado.combustivel) {
-                    alvo = H;
-                    menor_distancia_alvo = distancias[H];
-                    printf("[DEBUG] casa (voltar para casa): %d (dist %d)\n", alvo, menor_distancia_alvo);
-                } else {
-                    printf("[DEBUG] Não tem mais nada, dia finalizadoo\n");
-                    printf("x\n");
-                    fflush(stdout);
-                    char resp[10]; scanf("%s", resp);
-                    free(distancias);
-                    break;
-                }
-            }
-        }
-        
-        printf("[DEBUG] next %d (distância %d)\n", alvo, menor_distancia_alvo);
-
-        int prox = -1;
-        int custo_passo = INF;
-
-        link p = g->adj[estado.posicao_atual];
-        while (p != NULL) {
-            int v_vizinho = p->vertex;
-            int peso_aresta = p->weight;
-
-            // Vê qual o caminho mais curto do vizinho e se tem gasolina 
-            if (distancias[alvo] == distancias[v_vizinho] + peso_aresta && peso_aresta <= estado.combustivel) {
-                if (prox == -1 || peso_aresta < custo_passo) {
-                    prox = v_vizinho;
-                    custo_passo = peso_aresta;
-                    printf("[DEBUG] Candidato a próximo passo: %d (custo %d) Distancia destino: %d, Distancia viz: %d\n", prox, custo_passo, distancias[alvo], distancias[v_vizinho]);
-                }
-            }
-            p = p->next;
-        }
-        
-        if (prox != -1) {
-            printf("[DEBUG] MOVENDO: Próximo passo para %d com custo %d\n", prox, custo_passo);
-            printf("m %d\n", prox);
-            fflush(stdout);
-            char resp[10]; scanf("%s", resp);
-            estado.posicao_atual = prox;
-            estado.combustivel -= custo_passo;
-            printf("[DEBUG] Nova posição: %d, Combustível restante: %d.\n", estado.posicao_atual, estado.combustivel);
-        } else {
-            printf("[DEBUG] Não foi possível encontrar um próximo passo válido para o destino %d\n", alvo);
-            printf("x\n");
-            fflush(stdout);
-            char resp[10]; scanf("%s", resp);
-            free(distancias);
+        if(dist[alvo]==INF || dist[alvo]>e.combustivel){
+            printf("[DEBUG] Nao e possivel chegar ao alvo (distancia ou combustivel insuficiente). Encerrando.\n");
+            printf("x\n"); fflush(stdout);
             break;
         }
 
-        free(distancias);
+        reconstruirCaminho(alvo,parent,e.posicao_atual,caminho,&len);
+        for(int i=1;i<len;i++){
+            int nxt=caminho[i];
+            int custo=dist[nxt]-dist[caminho[i-1]];
+            printf("[DEBUG] Movendo para %d (custo=%d)\n", nxt, custo);
+            printf("m %d\n",nxt); fflush(stdout);
+            char resp[10]; scanf("%s",resp);
+            e.combustivel-=custo;
+            e.posicao_atual=nxt;
+        }
     }
-
-    // Finalização
-    printf("[DEBUG] Liberação da memória\n");
-    for (int i = 0; i <= N; i++) {
-        if (restaurant_orders[i]) free(restaurant_orders[i]);
-    }
-    free(restaurant_orders);
-    free(num_orders_per_restaurant);
-    freeGraph(g);
-    printf("[DEBUG] Fim do programa\n");
-
     return 0;
 }
