@@ -173,6 +173,114 @@ void addEdge(Graph g, int u, int v, int w, int *is_restaurant, int *is_gasoline)
     printf("[DEBUG] Aresta adicionada: %d -> %d (peso=%d)\n", u, v, w);
 }
 
+// ---------------- Declarações de funções ----------------
+int dijkstra(Graph g, int start, int target, int *dist, int *parent);
+int temGasolinaDisponivel(Graph g, int posto);
+
+// ---------------- Função para verificar postos no caminho ----------------
+
+int verificarPostoNoCaminho(Graph g, int origem, int destino, int combustivel_atual, int tanque_maximo, int *is_gasoline) {
+    int dist[MAX_V];
+    int parent[MAX_V];
+    
+    // Calcular caminho mais curto
+    dijkstra(g, origem, destino, dist, parent);
+    
+    // Reconstruir caminho
+    int caminho[MAX_V];
+    int tamanho_caminho = 0;
+    int atual = destino;
+    
+    while(atual != -1) {
+        caminho[tamanho_caminho++] = atual;
+        atual = parent[atual];
+    }
+    
+    // Inverter caminho para ter origem->destino
+    for(int i = 0; i < tamanho_caminho/2; i++) {
+        int temp = caminho[i];
+        caminho[i] = caminho[tamanho_caminho-1-i];
+        caminho[tamanho_caminho-1-i] = temp;
+    }
+    
+    // Verificar postos no caminho (se combustível não está cheio)
+    if(combustivel_atual >= tanque_maximo) {
+        return -1; // Já está com tanque cheio
+    }
+    
+    int combustivel_restante = combustivel_atual;
+    for(int i = 1; i < tamanho_caminho; i++) {
+        int vertice = caminho[i];
+        
+        // Calcular combustível gasto para chegar a este vértice
+        if(i > 0) {
+            combustivel_restante -= 1; // Assumindo custo 1 por movimento
+        }
+        
+        // Se é posto de gasolina e tem combustível disponível
+        if(is_gasoline[vertice] && temGasolinaDisponivel(g, vertice)) {
+            // Verificar se ainda teria combustível para continuar até o destino
+            int dist_restante = tamanho_caminho - i - 1;
+            if(combustivel_restante >= dist_restante) {
+                printf("[DEBUG] Posto %d detectado no caminho para %d (vale a pena abastecer)\n", vertice, destino);
+                return vertice;
+            }
+        }
+    }
+    
+    return -1; // Nenhum posto viável no caminho
+}
+
+// ---------------- Função para verificar restaurantes no caminho ----------------
+
+int verificarRestauranteNoCaminho(Graph g, int origem, int destino, int combustivel_atual, int capacidade_mochila, int tamanho_mochila, int *is_restaurant, int *num_orders) {
+    int dist[MAX_V];
+    int parent[MAX_V];
+    
+    // Calcular caminho mais curto
+    dijkstra(g, origem, destino, dist, parent);
+    
+    // Reconstruir caminho
+    int caminho[MAX_V];
+    int tamanho_caminho = 0;
+    int atual = destino;
+    
+    while(atual != -1) {
+        caminho[tamanho_caminho++] = atual;
+        atual = parent[atual];
+    }
+    
+    // Inverter caminho para ter origem->destino
+    for(int i = 0; i < tamanho_caminho/2; i++) {
+        int temp = caminho[i];
+        caminho[i] = caminho[tamanho_caminho-1-i];
+        caminho[tamanho_caminho-1-i] = temp;
+    }
+    
+    // Verificar restaurantes no caminho
+    int combustivel_restante = combustivel_atual;
+    for(int i = 1; i < tamanho_caminho; i++) {
+        int vertice = caminho[i];
+        
+        // Calcular combustível gasto para chegar a este vértice
+        if(i > 0) {
+            combustivel_restante -= 1; // Assumindo custo 1 por movimento
+        }
+        
+        // Se é restaurante e tem espaço na mochila e pedidos disponíveis
+        if(is_restaurant[vertice] && tamanho_mochila < capacidade_mochila && num_orders[vertice] > 0) {
+            // Verificar se ainda teria combustível para continuar até o destino
+            int dist_restante = tamanho_caminho - i - 1;
+            if(combustivel_restante >= dist_restante) {
+                printf("[DEBUG] Restaurante %d detectado no caminho para %d (combustível suficiente)\n", vertice, destino);
+                return vertice;
+            }
+        }
+    }
+    
+    return -1; // Nenhum restaurante viável no caminho
+}
+
 // ---------------- Dijkstra com caminho ----------------
 
 int dijkstra(Graph g, int start, int target, int *dist, int *parent){
@@ -349,9 +457,22 @@ int main(){
 
     int *dist = malloc((N + 1) * sizeof(int));
     int *parent = malloc((N + 1) * sizeof(int));
+    
+    // Contadores para debug
+    int iteracoes = 0;
+    int total_pickups = 0;
+    int total_entregas = 0;
+    int total_abastecimentos = 0;
 
     while(1){
-        printf("[DEBUG] Estado: Pos=%d Comb=%d Mochila=%d\n", e.posicao_atual, e.combustivel, e.mochila_tamanho);
+        iteracoes++;
+        printf("[DEBUG] Iteração %d - Estado: Pos=%d Comb=%d Mochila=%d\n", iteracoes, e.posicao_atual, e.combustivel, e.mochila_tamanho);
+        
+        // Print de progresso a cada 10 iterações
+        if(iteracoes % 10 == 0) {
+            printf("[PROGRESSO] %d iterações completadas - Pickups: %d, Entregas: %d, Abastecimentos: %d\n", 
+                   iteracoes, total_pickups, total_entregas, total_abastecimentos);
+        }
         
         // Calcular distâncias para todos os vértices
         dijkstra(g, e.posicao_atual, -3, dist, parent);
@@ -366,6 +487,8 @@ int main(){
                 }
             }
             if(!restam_pedidos) {
+                printf("[DEBUG] FINALIZADO - Iterações: %d, Pickups: %d, Entregas: %d, Abastecimentos: %d\n", 
+                       iteracoes, total_pickups, total_entregas, total_abastecimentos);
                 printf("x\n");
                 fflush(stdout);
                 break;
@@ -376,48 +499,56 @@ int main(){
         if(temPedido(&e, e.posicao_atual)) {
             printf("e %d\n", e.posicao_atual);
             fflush(stdout);
-            char resp[10];
-            scanf("%s", resp);
+            int pontos;
+            scanf("%d", &pontos);
             entregarPedido(&e, e.posicao_atual);
+            total_entregas++;
+            printf("[DEBUG] Entrega realizada! Total entregas: %d\n", total_entregas);
             continue;
         }
 
-        // 2. Se está num restaurante, pegar apenas um pedido (o mais próximo)
+        // 2. Se está num restaurante, pegar pedidos até atingir capacidade
         if(is_restaurant[e.posicao_atual] && e.mochila_tamanho < e.mochila_capacidade && num_orders[e.posicao_atual] > 0) {
-            // Calcular distâncias para todos os destinos dos pedidos deste restaurante
-            int melhor_pedido = -1;
-            int menor_dist_pedido = INF;
-            int indice_melhor = -1;
-            
-            for(int i = 0; i < num_orders[e.posicao_atual]; i++) {
-                int dest = restaurant_orders[e.posicao_atual][i];
-                if(dist[dest] < menor_dist_pedido) {
-                    menor_dist_pedido = dist[dest];
-                    melhor_pedido = dest;
-                    indice_melhor = i;
-                }
-            }
-            
-            // Pegar apenas o pedido mais próximo
-            if(melhor_pedido != -1) {
-                printf("p %d\n", melhor_pedido);
-                fflush(stdout);
-                char resp[10];
-                scanf("%s", resp);
-                pegarPedido(&e, melhor_pedido);
+            // Pegar múltiplos pedidos até atingir capacidade ou acabar pedidos
+            while(e.mochila_tamanho < e.mochila_capacidade && num_orders[e.posicao_atual] > 0) {
+                // Calcular distâncias para todos os destinos dos pedidos deste restaurante
+                int melhor_pedido = -1;
+                int menor_dist_pedido = INF;
+                int indice_melhor = -1;
                 
-                // Remover o pedido da lista do restaurante
-                for(int j = indice_melhor; j < num_orders[e.posicao_atual] - 1; j++) {
-                    restaurant_orders[e.posicao_atual][j] = restaurant_orders[e.posicao_atual][j + 1];
+                for(int i = 0; i < num_orders[e.posicao_atual]; i++) {
+                    int dest = restaurant_orders[e.posicao_atual][i];
+                    if(dist[dest] < menor_dist_pedido) {
+                        menor_dist_pedido = dist[dest];
+                        melhor_pedido = dest;
+                        indice_melhor = i;
+                    }
                 }
-                num_orders[e.posicao_atual]--;
-                printf("[DEBUG] Pedido %d removido do restaurante %d. Restam %d pedidos\n", 
-                       melhor_pedido, e.posicao_atual, num_orders[e.posicao_atual]);
+                
+                // Pegar o pedido mais próximo disponível
+                if(melhor_pedido != -1) {
+                    printf("p %d\n", melhor_pedido);
+                    fflush(stdout);
+                    int confirmacao;
+                    scanf("%d", &confirmacao);
+                    pegarPedido(&e, melhor_pedido);
+                    total_pickups++;
+                    
+                    // Remover o pedido da lista do restaurante
+                    for(int j = indice_melhor; j < num_orders[e.posicao_atual] - 1; j++) {
+                        restaurant_orders[e.posicao_atual][j] = restaurant_orders[e.posicao_atual][j + 1];
+                    }
+                    num_orders[e.posicao_atual]--;
+                    printf("[DEBUG] Pedido %d coletado! Total pickups: %d. Restam %d pedidos no restaurante. Mochila: %d/%d\n", 
+                           melhor_pedido, total_pickups, num_orders[e.posicao_atual], e.mochila_tamanho, e.mochila_capacidade);
+                } else {
+                    break;
+                }
             }
             continue;
         }
 
-        // 3. Se está num posto, abastecer se necessário
+        // 3. Se está num posto, abastecer sempre que possível
         if(is_gasoline[e.posicao_atual] && e.combustivel < T && temGasolinaDisponivel(g, e.posicao_atual)) {
             printf("a\n");
             fflush(stdout);
@@ -428,6 +559,9 @@ int main(){
             atualizarCapacidadePosto(g, e.posicao_atual, capacidade_retornada);
             
             e.combustivel = T;
+            total_abastecimentos++;
+            printf("[DEBUG] Abastecido no posto %d! Total abastecimentos: %d. Combustível: %d/%d\n", 
+                   e.posicao_atual, total_abastecimentos, e.combustivel, T);
             continue;
         }
 
@@ -447,7 +581,22 @@ int main(){
             
             // Verificar se tem combustível para a entrega
             if(menor_dist <= e.combustivel) {
-                proximo_destino = melhor_entrega;
+                // Verificar postos no caminho primeiro (se não está com tanque cheio)
+                int posto_no_caminho = verificarPostoNoCaminho(g, e.posicao_atual, melhor_entrega, e.combustivel, T, is_gasoline);
+                if(posto_no_caminho != -1) {
+                    proximo_destino = posto_no_caminho;
+                }
+                // Se não há posto no caminho, verificar restaurantes (se há espaço na mochila)
+                else if(e.mochila_tamanho < e.mochila_capacidade) {
+                    int restaurante_no_caminho = verificarRestauranteNoCaminho(g, e.posicao_atual, melhor_entrega, e.combustivel, e.mochila_capacidade, e.mochila_tamanho, is_restaurant, num_orders);
+                    if(restaurante_no_caminho != -1) {
+                        proximo_destino = restaurante_no_caminho;
+                    } else {
+                        proximo_destino = melhor_entrega;
+                    }
+                } else {
+                    proximo_destino = melhor_entrega;
+                }
             } else {
                 // Precisa abastecer antes
                 int melhor_posto = -1;
@@ -527,8 +676,8 @@ int main(){
             
             printf("m %d\n", nxt);
             fflush(stdout);
-            char resp[10];
-            scanf("%s", resp);
+            int custo_movimento;
+            scanf("%d", &custo_movimento);
             
             e.combustivel -= custo;
             e.posicao_atual = nxt;
